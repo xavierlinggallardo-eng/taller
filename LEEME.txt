@@ -1,0 +1,45 @@
+INVENTARIO DEL TALLER - DEMO
+=============================
+
+1) INSTALAR (una sola vez):
+   pip install customtkinter flask qrcode pillow requests
+
+2) CONFIGURAR:
+   Abrí config.py y poné la IP local de esta computadora en SERVER_IP_PARA_QR.
+   - Windows: abrí cmd y escribí "ipconfig", buscá "Dirección IPv4"
+   - Mac/Linux: en terminal escribí "ifconfig" o "ip a"
+   Los celulares de los trabajadores deben estar conectados al MISMO WiFi.
+
+3) EJECUTAR LA APP:
+   python admin_app.py
+
+4) USO:
+   - Pestaña "Inventario": cargá tus herramientas y materiales.
+   - Seleccioná un ítem y tocá "Generar QR del ítem seleccionado" -> se guarda
+     una imagen .png en la carpeta qrcodes/. Imprimila y pegala en la herramienta
+     o en el estante del material.
+   - Pestaña "Servidor / QR": tocá "Iniciar servidor" (déjalo corriendo mientras
+     trabajen). Los trabajadores escanean el QR con la cámara del celular y
+     llenan el formulario (nombre, retiro/devolución, cantidad).
+   - El stock se descuenta o suma automáticamente.
+   - Pestaña "Movimientos": historial completo de quién sacó/devolvió qué.
+
+5) WHATSAPP (notificaciones a vos):
+   Usamos CallMeBot, gratis para uso personal:
+   a. Desde TU WhatsApp, mandá el mensaje:
+        "I allow callmebot to send me messages"
+      al número: +34 644 59 71 67
+   b. Te va a responder con un "apikey".
+   c. En config.py poné:
+        WHATSAPP_ENABLED = True
+        WHATSAPP_PHONE = "tu numero con código de país, sin +"
+        WHATSAPP_APIKEY = "el apikey que te dieron"
+   d. Listo. Cada movimiento te va a llegar como mensaje de WhatsApp.
+   (Si en algún momento quieren pasar a algo más robusto para varios
+   administradores o mayor volumen, se reemplaza por la API oficial de
+   WhatsApp Business/Meta sin tocar el resto del sistema.)
+
+SIGUIENTE PASO (cuando validemos que esto sirve):
+   - Empaquetar como .exe con pyinstaller para no depender de tener Python instalado.
+   - Pasar la base de datos e IP fija a algo en la nube para no depender del WiFi local.
+   - Login de trabajadores (en vez de escribir el nombre a mano).
