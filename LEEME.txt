@@ -1,45 +1,87 @@
-INVENTARIO DEL TALLER - DEMO
-=============================
+INVENTARIO DEL TALLER - DEMO (versión en la nube, un solo QR)
+================================================================
 
-1) INSTALAR (una sola vez):
-   pip install customtkinter flask qrcode pillow requests
+QUÉ CAMBIÓ respecto a la primera versión:
+- Ya NO hace falta que los celulares estén en el mismo WiFi que tu compu.
+- Ahora hay UN SOLO QR (no uno por herramienta). Los trabajadores lo escanean,
+  ven el listado completo del taller con buscador, y eligen qué registrar.
+- La app de escritorio (admin_app.py) ahora habla con el servidor por internet,
+  así podés cargar/ver el inventario desde donde estés.
 
-2) CONFIGURAR:
-   Abrí config.py y poné la IP local de esta computadora en SERVER_IP_PARA_QR.
-   - Windows: abrí cmd y escribí "ipconfig", buscá "Dirección IPv4"
-   - Mac/Linux: en terminal escribí "ifconfig" o "ip a"
-   Los celulares de los trabajadores deben estar conectados al MISMO WiFi.
+---------------------------------------------------------------
+PASO 1: SUBIR EL SERVIDOR A INTERNET (gratis, con Render)
+---------------------------------------------------------------
+1. Creá una cuenta gratis en https://render.com
+2. Subí esta carpeta a un repositorio de GitHub (o conectá Render directo con
+   "Deploy from a folder" si tu plan lo permite).
+3. En Render: "New +" -> "Web Service" -> conectá el repo.
+4. Configuración:
+   - Build Command:  pip install -r requirements.txt
+   - Start Command:  gunicorn server:app
+5. Deploy. Render te va a dar una URL pública tipo:
+   https://taller-inventario.onrender.com
 
-3) EJECUTAR LA APP:
+   (Alternativas igual de válidas: Railway.app o PythonAnywhere.com,
+   el Procfile y requirements.txt ya están listos para cualquiera de las tres.)
+
+NOTA sobre la base de datos: en el plan gratis de Render el disco puede reiniciarse
+en cada redeploy. Para esta DEMO no es un problema. Cuando esto pase a producción
+en serio, se cambia SQLite por una base de datos administrada (Postgres gratis en
+Render/Railway) para que el inventario nunca se pierda. Avisame cuando lleguemos
+a esa etapa y lo migro.
+
+---------------------------------------------------------------
+PASO 2: CONFIGURAR config.py
+---------------------------------------------------------------
+Abrí config.py y completá:
+
+  PUBLIC_URL = "https://taller-inventario.onrender.com"   <- la URL que te dio Render
+  ADMIN_KEY  = "elegí-una-clave-secreta-larga"
+
+Esa misma ADMIN_KEY hay que ponerla como variable de entorno en Render
+(Settings -> Environment -> Add Environment Variable -> ADMIN_KEY = la-misma-clave).
+Así solo vos podés administrar el inventario desde la app de escritorio; los
+trabajadores solo pueden usar el formulario público.
+
+---------------------------------------------------------------
+PASO 3: INSTALAR Y CORRER LA APP DE ESCRITORIO (admin)
+---------------------------------------------------------------
+   pip install customtkinter requests
+
    python admin_app.py
 
-4) USO:
-   - Pestaña "Inventario": cargá tus herramientas y materiales.
-   - Seleccioná un ítem y tocá "Generar QR del ítem seleccionado" -> se guarda
-     una imagen .png en la carpeta qrcodes/. Imprimila y pegala en la herramienta
-     o en el estante del material.
-   - Pestaña "Servidor / QR": tocá "Iniciar servidor" (déjalo corriendo mientras
-     trabajen). Los trabajadores escanean el QR con la cámara del celular y
-     llenan el formulario (nombre, retiro/devolución, cantidad).
-   - El stock se descuenta o suma automáticamente.
-   - Pestaña "Movimientos": historial completo de quién sacó/devolvió qué.
+Desde ahí:
+- Pestaña "Inventario": cargás herramientas y materiales (se guardan en el servidor).
+- Pestaña "Servidor / QR": tocá "Descargar QR general del taller".
+  Se guarda qr_general_taller.png -> IMPRIMILO y pegalo en la pared del taller.
+  Ese es el único QR que necesitás, para siempre (mientras no cambies la URL).
+- Pestaña "Movimientos": vas a ver en tiempo real quién retiró/devolvió qué.
 
-5) WHATSAPP (notificaciones a vos):
-   Usamos CallMeBot, gratis para uso personal:
-   a. Desde TU WhatsApp, mandá el mensaje:
-        "I allow callmebot to send me messages"
-      al número: +34 644 59 71 67
-   b. Te va a responder con un "apikey".
-   c. En config.py poné:
-        WHATSAPP_ENABLED = True
-        WHATSAPP_PHONE = "tu numero con código de país, sin +"
-        WHATSAPP_APIKEY = "el apikey que te dieron"
-   d. Listo. Cada movimiento te va a llegar como mensaje de WhatsApp.
-   (Si en algún momento quieren pasar a algo más robusto para varios
-   administradores o mayor volumen, se reemplaza por la API oficial de
-   WhatsApp Business/Meta sin tocar el resto del sistema.)
+---------------------------------------------------------------
+PASO 4: LO QUE VE EL TRABAJADOR
+---------------------------------------------------------------
+Escanea el QR pegado en el taller -> se abre en su celular (con datos móviles
+o cualquier WiFi, no hace falta que sea el tuyo) -> ve la lista completa con
+buscador -> toca la herramienta/material -> completa nombre, retiro o
+devolución, y cantidad -> confirma.
 
-SIGUIENTE PASO (cuando validemos que esto sirve):
-   - Empaquetar como .exe con pyinstaller para no depender de tener Python instalado.
-   - Pasar la base de datos e IP fija a algo en la nube para no depender del WiFi local.
-   - Login de trabajadores (en vez de escribir el nombre a mano).
+---------------------------------------------------------------
+PASO 5: WHATSAPP (notificaciones a vos)
+---------------------------------------------------------------
+Usamos CallMeBot (gratis, personal):
+a. Desde TU WhatsApp mandá "I allow callmebot to send me messages"
+   al número +34 644 59 71 67.
+b. Te responde con un apikey.
+c. En config.py:
+     WHATSAPP_ENABLED = True
+     WHATSAPP_PHONE = "tu numero con código de país, sin +"
+     WHATSAPP_APIKEY = "el apikey"
+d. Esas mismas variables también van como Environment Variables en Render
+   para que el servidor (que corre en la nube, no en tu compu) pueda enviarlas.
+
+---------------------------------------------------------------
+SIGUIENTE PASO cuando validemos que esto sirve en el día a día:
+---------------------------------------------------------------
+- Pasar SQLite a Postgres (persistencia real, sin depender del disco de Render).
+- Empaquetar admin_app.py como .exe con pyinstaller.
+- WhatsApp Business API oficial si el volumen de mensajes crece.

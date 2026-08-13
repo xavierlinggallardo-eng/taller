@@ -2,12 +2,19 @@
 # CONFIGURACIÓN DEL TALLER
 # ---------------------------------------------------
 
-# IP local de la computadora donde corre el servidor.
-# Los celulares de los trabajadores deben estar en la MISMA red WiFi.
-# Para saber tu IP local: en Windows "ipconfig", en Mac/Linux "ifconfig" o "ip a".
-SERVER_HOST = "0.0.0.0"   # no cambiar, permite conexiones desde otros dispositivos
+# Host/puerto en los que corre Flask (esto lo maneja el hosting en la nube, no lo toques).
+SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 5000
-SERVER_IP_PARA_QR = "192.168.1.51"  # <-- CAMBIAR por la IP real de tu compu
+
+# URL PÚBLICA del servidor una vez desplegado en la nube (Render, Railway, PythonAnywhere, etc).
+# Ejemplo: "https://mi-taller.onrender.com"
+# La app de escritorio usa esta URL para hablar con el servidor desde cualquier lugar,
+# y también se usa para generar el QR general del taller.
+PUBLIC_URL = "https://CAMBIAR-por-tu-url.onrender.com"
+
+# Clave simple para que solo vos (admin) puedas usar la app de escritorio contra el servidor.
+# Poné cualquier texto secreto, el mismo acá y en las variables de entorno del hosting.
+ADMIN_KEY = "cambia-esta-clave-secreta"
 
 # --- WhatsApp (CallMeBot) ---
 WHATSAPP_ENABLED = False          # poné True cuando tengas tu apikey

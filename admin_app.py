@@ -1,28 +1,21 @@
 import customtkinter as ctk
 from tkinter import ttk, messagebox
-import threading
-import os
-import qrcode
+import requests
+import webbrowser
 
-import database as db
-from notifications import send_whatsapp
-from config import SERVER_IP_PARA_QR, SERVER_PORT
-from server import run_server
+from config import PUBLIC_URL, ADMIN_KEY
 
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
 
-QR_DIR = "qrcodes"
-os.makedirs(QR_DIR, exist_ok=True)
+HEADERS = {"X-Admin-Key": ADMIN_KEY}
 
 
 class TallerApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Inventario del Taller")
+        self.title("Inventario del Taller (remoto)")
         self.geometry("1000x650")
-
-        db.init_db()
 
         self.tabs = ctk.CTkTabview(self, width=980, height=630)
         self.tabs.pack(padx=10, pady=10, fill="both", expand=True)
@@ -35,8 +28,42 @@ class TallerApp(ctk.CTk):
         self._build_movements_tab()
         self._build_server_tab()
 
-        self.server_thread = None
         self.refresh_all()
+
+    # ---------------- helpers de red ----------------
+    def api_get(self, path):
+        try:
+            r = requests.get(f"{PUBLIC_URL}{path}", headers=HEADERS, timeout=10)
+            if r.status_code == 401:
+                messagebox.showerror("Error", "ADMIN_KEY incorrecta o no configurada (revisá config.py).")
+                return None
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            messagebox.showerror("Error de conexión", f"No se pudo conectar al servidor:\n{e}\n\n"
+                                  f"Revisá que PUBLIC_URL en config.py sea correcta y que el servidor esté desplegado.")
+            return None
+
+    def api_post(self, path, data=None):
+        try:
+            r = requests.post(f"{PUBLIC_URL}{path}", headers=HEADERS, json=data, timeout=10)
+            if r.status_code == 401:
+                messagebox.showerror("Error", "ADMIN_KEY incorrecta o no configurada.")
+                return None
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            messagebox.showerror("Error de conexión", str(e))
+            return None
+
+    def api_delete(self, path):
+        try:
+            r = requests.delete(f"{PUBLIC_URL}{path}", headers=HEADERS, timeout=10)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            messagebox.showerror("Error de conexión", str(e))
+            return None
 
     # ---------------- INVENTARIO ----------------
     def _build_inventory_tab(self):
@@ -69,7 +96,6 @@ class TallerApp(ctk.CTk):
 
         ctk.CTkButton(top, text="Agregar ítem", command=self.add_item).grid(row=1, column=6, padx=10)
 
-        # Tabla
         cols = ("id", "name", "category", "quantity", "unit", "location", "min_stock")
         self.tree = ttk.Treeview(self.tab_inv, columns=cols, show="headings", height=18)
         headers = ["ID", "Nombre", "Categoría", "Cantidad", "Unidad", "Ubicación", "Stock mín."]
@@ -80,7 +106,6 @@ class TallerApp(ctk.CTk):
 
         bottom = ctk.CTkFrame(self.tab_inv)
         bottom.pack(fill="x", padx=10, pady=(0, 10))
-        ctk.CTkButton(bottom, text="Generar QR del ítem seleccionado", command=self.generate_qr_selected).pack(side="left", padx=5)
         ctk.CTkButton(bottom, text="Eliminar ítem seleccionado", fg_color="#dc2626", hover_color="#991b1b",
                       command=self.delete_selected).pack(side="left", padx=5)
         ctk.CTkButton(bottom, text="Actualizar lista", command=self.refresh_inventory).pack(side="left", padx=5)
@@ -99,15 +124,22 @@ class TallerApp(ctk.CTk):
             messagebox.showerror("Error", f"Revisá los datos ingresados.\n{e}")
             return
 
-        db.add_item(name, category, qty, unit, location, min_stock)
-        for entry in (self.in_name, self.in_qty, self.in_unit, self.in_location, self.in_min):
-            entry.delete(0, "end")
-        self.refresh_inventory()
+        result = self.api_post("/api/items", {
+            "name": name, "category": category, "quantity": qty,
+            "unit": unit, "location": location, "min_stock": min_stock
+        })
+        if result:
+            for entry in (self.in_name, self.in_qty, self.in_unit, self.in_location, self.in_min):
+                entry.delete(0, "end")
+            self.refresh_inventory()
 
     def refresh_inventory(self):
+        items = self.api_get("/api/items")
+        if items is None:
+            return
         for row in self.tree.get_children():
             self.tree.delete(row)
-        for item in db.get_items():
+        for item in items:
             self.tree.insert("", "end", values=(
                 item["id"], item["name"], item["category"], item["quantity"],
                 item["unit"], item["location"] or "-", item["min_stock"]
@@ -125,20 +157,8 @@ class TallerApp(ctk.CTk):
         if item_id is None:
             return
         if messagebox.askyesno("Confirmar", "¿Eliminar este ítem del inventario?"):
-            db.delete_item(item_id)
+            self.api_delete(f"/api/items/{item_id}")
             self.refresh_inventory()
-
-    def generate_qr_selected(self):
-        item_id = self._get_selected_item_id()
-        if item_id is None:
-            return
-        item = db.get_item(item_id)
-        url = f"http://{SERVER_IP_PARA_QR}:{SERVER_PORT}/item/{item_id}"
-        img = qrcode.make(url)
-        safe_name = "".join(c for c in item["name"] if c.isalnum() or c in " _-").strip()
-        path = os.path.join(QR_DIR, f"{item_id}_{safe_name}.png")
-        img.save(path)
-        messagebox.showinfo("QR generado", f"QR guardado en:\n{os.path.abspath(path)}\n\nApunta a:\n{url}")
 
     # ---------------- MOVIMIENTOS ----------------
     def _build_movements_tab(self):
@@ -153,9 +173,12 @@ class TallerApp(ctk.CTk):
         ctk.CTkButton(self.tab_mov, text="Actualizar", command=self.refresh_movements).pack(pady=(0, 10))
 
     def refresh_movements(self):
+        movs = self.api_get("/api/movements")
+        if movs is None:
+            return
         for row in self.tree_mov.get_children():
             self.tree_mov.delete(row)
-        for m in db.get_movements():
+        for m in movs:
             self.tree_mov.insert("", "end", values=(
                 m["id"], m["item_name"], m["worker_name"], m["action"], m["quantity"], m["timestamp"]
             ))
@@ -165,17 +188,15 @@ class TallerApp(ctk.CTk):
         frame = ctk.CTkFrame(self.tab_srv)
         frame.pack(fill="x", padx=20, pady=20)
 
-        self.lbl_status = ctk.CTkLabel(frame, text="Servidor: DETENIDO", font=("Arial", 16, "bold"), text_color="red")
-        self.lbl_status.pack(pady=10)
+        ctk.CTkLabel(frame, text=f"Servidor: {PUBLIC_URL}", font=("Arial", 14, "bold")).pack(pady=5)
+        ctk.CTkLabel(frame, text=(
+            "Este es el ÚNICO QR que necesitás: imprimilo y pegalo en el taller.\n"
+            "Al escanearlo, el trabajador ve TODO el inventario y elige qué registrar."
+        ), justify="left").pack(pady=5)
 
-        info_text = (
-            f"Los trabajadores deben estar en la MISMA red WiFi que esta computadora.\n"
-            f"URL base configurada: http://{SERVER_IP_PARA_QR}:{SERVER_PORT}/item/<id>\n"
-            f"(Cambiá SERVER_IP_PARA_QR en config.py por la IP real de esta compu si hace falta)"
-        )
-        ctk.CTkLabel(frame, text=info_text, justify="left").pack(pady=10)
-
-        ctk.CTkButton(frame, text="Iniciar servidor", command=self.start_server).pack(pady=5)
+        ctk.CTkButton(frame, text="Abrir listado en el navegador", command=lambda: webbrowser.open(PUBLIC_URL)).pack(pady=5)
+        ctk.CTkButton(frame, text="Descargar QR general del taller",
+                      command=self.download_general_qr).pack(pady=5)
 
         ctk.CTkLabel(self.tab_srv, text="Notificaciones pendientes (WhatsApp)", font=("Arial", 14, "bold")).pack(pady=(20, 5))
         self.notif_box = ctk.CTkTextbox(self.tab_srv, width=900, height=250)
@@ -186,34 +207,31 @@ class TallerApp(ctk.CTk):
         ctk.CTkButton(btns, text="Actualizar notificaciones", command=self.refresh_notifications).pack(side="left", padx=5)
         ctk.CTkButton(btns, text="Reintentar envío a WhatsApp", command=self.retry_whatsapp).pack(side="left", padx=5)
 
-    def start_server(self):
-        if self.server_thread and self.server_thread.is_alive():
-            messagebox.showinfo("Info", "El servidor ya está corriendo.")
-            return
-        self.server_thread = threading.Thread(target=run_server, daemon=True)
-        self.server_thread.start()
-        self.lbl_status.configure(text="Servidor: ACTIVO", text_color="green")
+    def download_general_qr(self):
+        try:
+            r = requests.get(f"{PUBLIC_URL}/qr", timeout=10)
+            r.raise_for_status()
+            with open("qr_general_taller.png", "wb") as f:
+                f.write(r.content)
+            messagebox.showinfo("Listo", "QR guardado como qr_general_taller.png en esta carpeta. Imprimilo y pegalo en el taller.")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo descargar el QR:\n{e}")
 
     def refresh_notifications(self):
+        notifs = self.api_get("/api/notifications")
+        if notifs is None:
+            return
         self.notif_box.delete("1.0", "end")
-        for n in db.get_unsent_notifications():
-            self.notif_box.insert("end", f"[{n['timestamp']}] {n['message']}\n\n")
-        if not db.get_unsent_notifications():
+        if not notifs:
             self.notif_box.insert("end", "No hay notificaciones pendientes.")
+        for n in notifs:
+            self.notif_box.insert("end", f"[{n['timestamp']}] {n['message']}\n\n")
 
     def retry_whatsapp(self):
-        pending = db.get_unsent_notifications()
-        if not pending:
-            messagebox.showinfo("Info", "No hay notificaciones pendientes.")
-            return
-        enviados = 0
-        for n in pending:
-            ok, msg = send_whatsapp(n["message"])
-            if ok:
-                db.mark_notification_sent(n["id"])
-                enviados += 1
-        messagebox.showinfo("Resultado", f"Enviadas: {enviados}/{len(pending)}")
-        self.refresh_notifications()
+        result = self.api_post("/api/notifications/retry")
+        if result:
+            messagebox.showinfo("Resultado", f"Enviadas: {result['sent']}/{result['total']}")
+            self.refresh_notifications()
 
     # ---------------- GENERAL ----------------
     def refresh_all(self):
